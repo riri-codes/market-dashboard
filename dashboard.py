@@ -53,18 +53,24 @@ def add_analysis_columns(df: pd.DataFrame) -> pd.DataFrame:
     - rolling short/long averages
     - % change from the previous snapshot
     - a boolean flag for whether that change counts as a 'spike'
+
+    Uses groupby().transform() rather than groupby().apply() - transform
+    guarantees the result lines up with df's original columns/index, so it
+    behaves consistently across pandas versions.
     """
     df = df.sort_values(["symbol", "timestamp"]).copy()
 
-    def per_symbol(group: pd.DataFrame) -> pd.DataFrame:
-        group = group.copy()
-        group["short_ma"] = group["price_usd"].rolling(SHORT_WINDOW, min_periods=1).mean()
-        group["long_ma"] = group["price_usd"].rolling(LONG_WINDOW, min_periods=1).mean()
-        group["pct_change"] = group["price_usd"].pct_change() * 100
-        group["is_spike"] = group["pct_change"].abs() >= SPIKE_THRESHOLD_PCT
-        return group
+    grouped_price = df.groupby("symbol")["price_usd"]
+    df["short_ma"] = grouped_price.transform(
+        lambda s: s.rolling(SHORT_WINDOW, min_periods=1).mean()
+    )
+    df["long_ma"] = grouped_price.transform(
+        lambda s: s.rolling(LONG_WINDOW, min_periods=1).mean()
+    )
+    df["pct_change"] = grouped_price.transform(lambda s: s.pct_change() * 100)
+    df["is_spike"] = df["pct_change"].abs() >= SPIKE_THRESHOLD_PCT
 
-    return df.groupby("symbol", group_keys=False).apply(per_symbol)
+    return df
 
 
 df = load_data()
